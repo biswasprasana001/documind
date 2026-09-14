@@ -1,0 +1,50 @@
+# Environment and secrets (files holding private keys and passwords)
+.env
+.env.*
+!.env.example
+!.env-example
+*.env
+
+# Python (files created automatically when running Python)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments (isolated rooms holding Python tools and packages)
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Node.js and frontend packages (tools downloaded from the web for the user interface)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build outputs (final prepared files made ready for the web browser)
+frontend/dist/
+dist/
+build/
+
+# Database files and persistent data (stored information and local databases)
+*.sqlite3
+*.db
+postgres_data/
+
+# Code editor and IDE files (settings for your text editor software like VS Code)
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Operating system files (hidden files created by Windows or Mac automatically)
+.DS_Store
+Thumbs.db
+desktop.ini
