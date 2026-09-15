@@ -4,7 +4,7 @@ import json
 import requests
 import psycopg2
 from psycopg2.extras import execute_values
-from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Depends
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -67,10 +67,13 @@ def init_db(max_retries=10, delay=2):
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS documents (
                     id serial PRIMARY KEY,
+                    session_id text,
                     filename text,
                     content text,
                     embedding vector(384)
                 );
+                ALTER TABLE documents ADD COLUMN IF NOT EXISTS session_id text;
+                CREATE INDEX IF NOT EXISTS idx_documents_session_id ON documents (session_id);
             """)
             conn.commit()
             cur.close()
@@ -101,8 +104,12 @@ def get_embeddings(texts: list[str]) -> list[list[float]]:
     return res
 
 @app.post("/upload")
-@limiter.limit("5/minute")
-async def upload_document(request: Request, file: UploadFile = File(...)):
+@limiter.limit("15/minute")
+async def upload_document(
+    request: Request, 
+    file: UploadFile = File(...),
+    session_id: str = Form(...)
+):
     if not file.filename.endswith(('.pdf', '.txt')):
         raise HTTPException(status_code=400, detail="Only .pdf and .txt allowed")
     
@@ -138,53 +145,68 @@ async def upload_document(request: Request, file: UploadFile = File(...)):
         # Batch insert for efficiency
         embeddings = get_embeddings(chunks)
         
-        records = [(file.filename, chunk, embedding) for chunk, embedding in zip(chunks, embeddings)]
+        records = [(session_id, file.filename, chunk, embedding) for chunk, embedding in zip(chunks, embeddings)]
         execute_values(cur, 
-            "INSERT INTO documents (filename, content, embedding) VALUES %s",
+            "INSERT INTO documents (session_id, filename, content, embedding) VALUES %s",
             records
         )
         conn.commit()
+
+        # Fetch all distinct filenames currently in this session
+        cur.execute("SELECT DISTINCT filename FROM documents WHERE session_id = %s ORDER BY filename;", (session_id,))
+        documents = [r[0] for r in cur.fetchall()]
         cur.close()
         conn.close()
         
-        return {"message": f"Successfully processed {len(chunks)} chunks from {file.filename}"}
+        return {
+            "message": f"Successfully processed {len(chunks)} chunks from {file.filename}",
+            "filename": file.filename,
+            "documents": documents
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 class QueryRequest(BaseModel):
     question: str
+    session_id: str
+
+class ClearRequest(BaseModel):
+    session_id: str
 
 @app.post("/ask")
-@limiter.limit("10/minute")
+@limiter.limit("15/minute")
 async def ask_question(request: Request, query: QueryRequest):
     try:
         # Embed the query
         query_embedding = get_embeddings([query.question])[0]
         
-        # Search pgvector
+        # Search pgvector within this session
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # Get top 5 most similar chunks
+        # Get top 8 most similar chunks across all documents in this session
         cur.execute("""
-            SELECT content, 1 - (embedding <=> %s::vector) as similarity
+            SELECT filename, content, 1 - (embedding <=> %s::vector) as similarity
             FROM documents
+            WHERE session_id = %s
             ORDER BY embedding <=> %s::vector
-            LIMIT 5;
-        """, (json.dumps(query_embedding), json.dumps(query_embedding)))
+            LIMIT 8;
+        """, (json.dumps(query_embedding), query.session_id, json.dumps(query_embedding)))
         
         results = cur.fetchall()
         cur.close()
         conn.close()
         
         if not results:
-            return {"answer": "No relevant documents found in the database. Please upload a document first."}
+            return {"answer": "No relevant documents found for this session. Please upload one or more documents first."}
             
-        context = "\n\n".join([r[0] for r in results])
+        context = "\n\n".join([f"--- Document: {r[0]} ---\n{r[1]}" for r in results])
         
         # Use Gemini to generate answer
-        prompt = f"""You are a helpful assistant. Use the following context to answer the question. 
+        prompt = f"""You are a helpful assistant. Use the following context from uploaded document(s) to answer the question. 
+If the answer spans or is found across multiple documents, combine and synthesize the information from all relevant documents.
+Cite or mention the source document name(s) when helpful.
 If the answer is not in the context, say "I don't know based on the provided documents".
 
 Context:
@@ -197,6 +219,32 @@ Answer in markdown format."""
         response = llm_model.generate_content(prompt)
         return {"answer": response.text, "sources": len(results)}
 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/documents")
+def get_documents(session_id: str):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT DISTINCT filename FROM documents WHERE session_id = %s ORDER BY filename;", (session_id,))
+        documents = [r[0] for r in cur.fetchall()]
+        cur.close()
+        conn.close()
+        return {"documents": documents}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/clear")
+def clear_session(payload: ClearRequest):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM documents WHERE session_id = %s;", (payload.session_id,))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {"message": "Session cleared completely. No documents or memory retained."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
