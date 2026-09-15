@@ -164,7 +164,10 @@ async def upload_document(
             "documents": documents
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        error_msg = str(e)
+        if "429" in error_msg or "Quota" in error_msg or "ResourceExhausted" in error_msg:
+            raise HTTPException(status_code=429, detail="The AI is currently too busy or has reached its limit. Please wait a moment and try again.")
+        raise HTTPException(status_code=500, detail="Something went wrong during upload. Please try again later.")
 
 
 class QueryRequest(BaseModel):
@@ -220,7 +223,18 @@ Answer in markdown format."""
         return {"answer": response.text, "sources": len(results)}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        error_msg = str(e)
+        if "429" in error_msg or "Quota" in error_msg or "ResourceExhausted" in error_msg:
+            import re
+            match = re.search(r"Please retry in ([\d\.]+)s", error_msg)
+            if match:
+                retry_time = int(round(float(match.group(1))))
+                detail = f"The AI is currently too busy or has reached its limit. Please try again in {retry_time} seconds."
+            else:
+                detail = "The AI is currently too busy or has reached its limit. Please wait a moment and try again."
+            raise HTTPException(status_code=429, detail=detail)
+        else:
+            raise HTTPException(status_code=500, detail="Something went wrong. Please try again later.")
 
 @app.get("/documents")
 def get_documents(session_id: str):
@@ -233,7 +247,7 @@ def get_documents(session_id: str):
         conn.close()
         return {"documents": documents}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Something went wrong fetching documents. Please try again later.")
 
 @app.post("/clear")
 def clear_session(payload: ClearRequest):
@@ -246,7 +260,7 @@ def clear_session(payload: ClearRequest):
         conn.close()
         return {"message": "Session cleared completely. No documents or memory retained."}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Something went wrong clearing the session. Please try again later.")
 
 @app.get("/health")
 def health_check():
