@@ -212,7 +212,7 @@ function App() {
       <header className="brutal-card bg-brutal-secondary flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tight">
-            Document Q&A AI
+            Upload, Ask, Chat!
           </h1>
           <p className="mt-2 font-medium">
             Upload multiple PDF or TXT files and ask questions to get AI-generated answers combining all documents.
@@ -346,15 +346,13 @@ function App() {
               >
                 💾 Save Keys
               </button>
-              {isByokActive && (
-                <button
-                  id="clear-keys-btn"
-                  onClick={handleClearKeys}
-                  className="brutal-btn bg-red-300 hover:bg-red-400 text-xs"
-                >
-                  🗑️ Clear Keys
-                </button>
-              )}
+              <button
+                id="clear-keys-btn"
+                onClick={handleClearKeys}
+                className="brutal-btn bg-red-300 hover:bg-red-400 text-xs"
+              >
+                🗑️ Clear Keys
+              </button>
             </div>
           </div>
         )}
