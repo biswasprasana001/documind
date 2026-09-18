@@ -164,7 +164,14 @@ async def verify_keys(payload: VerifyKeysRequest):
             resp = model.generate_content("Reply with the single word OK")
             result["gemini"] = {"ok": True, "message": f"Valid ✅ — model responded: {resp.text.strip()[:40]}"}
         except Exception as e:
-            result["gemini"] = {"ok": False, "message": f"Invalid ❌ — {str(e)[:120]}"}
+            err_str = str(e)
+            if "429" in err_str:
+                msg = "Quota Exceeded. Please check your plan and billing details."
+            elif any(code in err_str for code in ["400", "401", "403", "API_KEY_INVALID"]):
+                msg = "Invalid API Key. Please verify your key is correct and active."
+            else:
+                msg = "An unexpected error occurred during verification."
+            result["gemini"] = {"ok": False, "message": f"Invalid ❌ — {msg}"}
     else:
         result["gemini"] = {"ok": None, "message": "No key provided"}
 
@@ -175,7 +182,14 @@ async def verify_keys(payload: VerifyKeysRequest):
             embeddings = hf.feature_extraction(["test"], model="sentence-transformers/all-MiniLM-L6-v2")
             result["hf"] = {"ok": True, "message": "Valid ✅ — embeddings returned successfully"}
         except Exception as e:
-            result["hf"] = {"ok": False, "message": f"Invalid ❌ — {str(e)[:120]}"}
+            err_str = str(e)
+            if "429" in err_str:
+                msg = "Quota Exceeded. Please check your plan and billing details."
+            elif any(code in err_str for code in ["400", "401", "403"]):
+                msg = "Invalid API Key. Please verify your key is correct and active."
+            else:
+                msg = "An unexpected error occurred during verification."
+            result["hf"] = {"ok": False, "message": f"Invalid ❌ — {msg}"}
     else:
         result["hf"] = {"ok": None, "message": "No key provided"}
 
