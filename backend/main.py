@@ -20,8 +20,35 @@ from pgvector.psycopg2 import register_vector
 
 load_dotenv()
 
-# Initialize Rate Limiter
-limiter = Limiter(key_func=get_remote_address)
+# ─────────────────────────────────────────────
+#  Server-side default AI credentials
+# ─────────────────────────────────────────────
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+HF_API_KEY = os.getenv("HF_API_KEY")
+DB_URL = os.getenv("DATABASE_URL")
+
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    _default_llm = genai.GenerativeModel('gemini-3.6-flash')
+else:
+    _default_llm = None
+
+_default_hf_client = InferenceClient(api_key=HF_API_KEY) if HF_API_KEY else None
+
+# ─────────────────────────────────────────────
+#  Rate limiter — BYOK users get 100/min,
+#  default-key users stay at 15/min
+# ─────────────────────────────────────────────
+def byok_aware_key(request: Request) -> str:
+    """Rate-limit key: BYOK requests get a separate, higher-quota bucket."""
+    has_gemini = bool(request.headers.get("X-Gemini-API-Key", "").strip())
+    has_hf = bool(request.headers.get("X-HF-API-Key", "").strip())
+    ip = get_remote_address(request)
+    if has_gemini or has_hf:
+        return f"byok:{ip}"
+    return ip
+
+limiter = Limiter(key_func=byok_aware_key)
 app = FastAPI(title="Document Q&A AI")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -35,17 +62,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# AI configurations
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-HF_API_KEY = os.getenv("HF_API_KEY")
-DB_URL = os.getenv("DATABASE_URL")
+# ─────────────────────────────────────────────
+#  Per-request AI client resolver
+# ─────────────────────────────────────────────
+def get_ai_clients(request: Request):
+    """
+    Returns (llm_model, hf_client) resolved for this request.
+    If BYOK headers are present they take precedence over server defaults.
+    """
+    user_gemini_key = request.headers.get("X-Gemini-API-Key", "").strip()
+    user_hf_key = request.headers.get("X-HF-API-Key", "").strip()
 
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    llm_model = genai.GenerativeModel('gemini-3.6-flash')
+    if user_gemini_key:
+        genai.configure(api_key=user_gemini_key)
+        llm = genai.GenerativeModel('gemini-3.6-flash')
+    else:
+        llm = _default_llm
 
-hf_client = InferenceClient(api_key=HF_API_KEY) if HF_API_KEY else None
+    hf = InferenceClient(api_key=user_hf_key) if user_hf_key else _default_hf_client
+    return llm, hf
 
+# ─────────────────────────────────────────────
+#  Database helpers
+# ─────────────────────────────────────────────
 def get_db_connection():
     if not DB_URL:
         raise Exception("DATABASE_URL is not set")
@@ -91,9 +130,12 @@ def on_startup():
 
 init_db()
 
-def get_embeddings(texts: list[str]) -> list[list[float]]:
+# ─────────────────────────────────────────────
+#  Embedding helper (uses per-request hf client)
+# ─────────────────────────────────────────────
+def get_embeddings(texts: list[str], hf_client) -> list[list[float]]:
     if not hf_client:
-        raise Exception("HF_API_KEY is not set")
+        raise Exception("HF_API_KEY is not set and no user key was provided")
     embeddings = hf_client.feature_extraction(texts, model="sentence-transformers/all-MiniLM-L6-v2")
     if hasattr(embeddings, "tolist"):
         res = embeddings.tolist()
@@ -103,16 +145,55 @@ def get_embeddings(texts: list[str]) -> list[list[float]]:
         res = [res]
     return res
 
+# ─────────────────────────────────────────────
+#  POST /verify-keys  — test user-supplied keys
+# ─────────────────────────────────────────────
+class VerifyKeysRequest(BaseModel):
+    gemini_key: str = ""
+    hf_key: str = ""
+
+@app.post("/verify-keys")
+async def verify_keys(payload: VerifyKeysRequest):
+    result = {}
+
+    # Test Gemini key
+    if payload.gemini_key.strip():
+        try:
+            genai.configure(api_key=payload.gemini_key.strip())
+            model = genai.GenerativeModel('gemini-3.6-flash')
+            resp = model.generate_content("Reply with the single word OK")
+            result["gemini"] = {"ok": True, "message": f"Valid ✅ — model responded: {resp.text.strip()[:40]}"}
+        except Exception as e:
+            result["gemini"] = {"ok": False, "message": f"Invalid ❌ — {str(e)[:120]}"}
+    else:
+        result["gemini"] = {"ok": None, "message": "No key provided"}
+
+    # Test HuggingFace key
+    if payload.hf_key.strip():
+        try:
+            hf = InferenceClient(api_key=payload.hf_key.strip())
+            embeddings = hf.feature_extraction(["test"], model="sentence-transformers/all-MiniLM-L6-v2")
+            result["hf"] = {"ok": True, "message": "Valid ✅ — embeddings returned successfully"}
+        except Exception as e:
+            result["hf"] = {"ok": False, "message": f"Invalid ❌ — {str(e)[:120]}"}
+    else:
+        result["hf"] = {"ok": None, "message": "No key provided"}
+
+    return result
+
+# ─────────────────────────────────────────────
+#  POST /upload
+# ─────────────────────────────────────────────
 @app.post("/upload")
-@limiter.limit("15/minute")
+@limiter.limit("100/minute", key_func=lambda request: f"byok:{get_remote_address(request)}" if (request.headers.get("X-Gemini-API-Key") or request.headers.get("X-HF-API-Key")) else get_remote_address(request))
 async def upload_document(
-    request: Request, 
+    request: Request,
     file: UploadFile = File(...),
     session_id: str = Form(...)
 ):
     if not file.filename.endswith(('.pdf', '.txt')):
         raise HTTPException(status_code=400, detail="Only .pdf and .txt allowed")
-    
+
     content = ""
     # File size limit (approx 5MB)
     MAX_FILE_SIZE = 5 * 1024 * 1024
@@ -126,27 +207,29 @@ async def upload_document(
             content += page.get_text()
     else:
         content = file_bytes.decode('utf-8')
-        
+
     if not content.strip():
         raise HTTPException(status_code=400, detail="Document is empty")
 
     # Chunk the text
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     chunks = text_splitter.split_text(content)
-    
+
     # Check context abuse (max 100 chunks per document)
     if len(chunks) > 100:
         raise HTTPException(status_code=400, detail="Document too large (too many chunks).")
 
+    _, hf_client = get_ai_clients(request)
+
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        
+
         # Batch insert for efficiency
-        embeddings = get_embeddings(chunks)
-        
+        embeddings = get_embeddings(chunks, hf_client)
+
         records = [(session_id, file.filename, chunk, embedding) for chunk, embedding in zip(chunks, embeddings)]
-        execute_values(cur, 
+        execute_values(cur,
             "INSERT INTO documents (session_id, filename, content, embedding) VALUES %s",
             records
         )
@@ -157,7 +240,7 @@ async def upload_document(
         documents = [r[0] for r in cur.fetchall()]
         cur.close()
         conn.close()
-        
+
         return {
             "message": f"Successfully processed {len(chunks)} chunks from {file.filename}",
             "filename": file.filename,
@@ -170,6 +253,9 @@ async def upload_document(
         raise HTTPException(status_code=500, detail="Something went wrong during upload. Please try again later.")
 
 
+# ─────────────────────────────────────────────
+#  Request models
+# ─────────────────────────────────────────────
 class QueryRequest(BaseModel):
     question: str
     session_id: str
@@ -177,17 +263,25 @@ class QueryRequest(BaseModel):
 class ClearRequest(BaseModel):
     session_id: str
 
+# ─────────────────────────────────────────────
+#  POST /ask
+# ─────────────────────────────────────────────
 @app.post("/ask")
-@limiter.limit("15/minute")
+@limiter.limit("100/minute", key_func=lambda request: f"byok:{get_remote_address(request)}" if (request.headers.get("X-Gemini-API-Key") or request.headers.get("X-HF-API-Key")) else get_remote_address(request))
 async def ask_question(request: Request, query: QueryRequest):
+    llm_model, hf_client = get_ai_clients(request)
+
+    if not llm_model:
+        raise HTTPException(status_code=503, detail="No Gemini API key configured. Please provide your own key in the API Keys panel.")
+
     try:
         # Embed the query
-        query_embedding = get_embeddings([query.question])[0]
-        
+        query_embedding = get_embeddings([query.question], hf_client)[0]
+
         # Search pgvector within this session
         conn = get_db_connection()
         cur = conn.cursor()
-        
+
         # Get top 8 most similar chunks across all documents in this session
         cur.execute("""
             SELECT filename, content, 1 - (embedding <=> %s::vector) as similarity
@@ -196,16 +290,16 @@ async def ask_question(request: Request, query: QueryRequest):
             ORDER BY embedding <=> %s::vector
             LIMIT 8;
         """, (json.dumps(query_embedding), query.session_id, json.dumps(query_embedding)))
-        
+
         results = cur.fetchall()
         cur.close()
         conn.close()
-        
+
         if not results:
             return {"answer": "No relevant documents found for this session. Please upload one or more documents first."}
-            
+
         context = "\n\n".join([f"--- Document: {r[0]} ---\n{r[1]}" for r in results])
-        
+
         # Use Gemini to generate answer
         prompt = f"""You are a helpful assistant. Use the following context from uploaded document(s) to answer the question. 
 If the answer spans or is found across multiple documents, combine and synthesize the information from all relevant documents.
@@ -218,7 +312,7 @@ Context:
 Question: {query.question}
 
 Answer in markdown format."""
-        
+
         response = llm_model.generate_content(prompt)
         return {"answer": response.text, "sources": len(results)}
 
@@ -236,6 +330,9 @@ Answer in markdown format."""
         else:
             raise HTTPException(status_code=500, detail="Something went wrong. Please try again later.")
 
+# ─────────────────────────────────────────────
+#  GET /documents
+# ─────────────────────────────────────────────
 @app.get("/documents")
 def get_documents(session_id: str):
     try:
@@ -249,6 +346,9 @@ def get_documents(session_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail="Something went wrong fetching documents. Please try again later.")
 
+# ─────────────────────────────────────────────
+#  POST /clear
+# ─────────────────────────────────────────────
 @app.post("/clear")
 def clear_session(payload: ClearRequest):
     try:
@@ -262,6 +362,9 @@ def clear_session(payload: ClearRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail="Something went wrong clearing the session. Please try again later.")
 
+# ─────────────────────────────────────────────
+#  GET /health
+# ─────────────────────────────────────────────
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
