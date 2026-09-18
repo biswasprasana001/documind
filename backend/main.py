@@ -1,6 +1,7 @@
 import os
 import io
 import json
+import re
 import requests
 import psycopg2
 from psycopg2.extras import execute_values
@@ -81,6 +82,29 @@ def get_ai_clients(request: Request):
 
     hf = InferenceClient(api_key=user_hf_key) if user_hf_key else _default_hf_client
     return llm, hf
+
+# ─────────────────────────────────────────────
+#  Rate-limit error message helpers
+# ─────────────────────────────────────────────
+def _gemini_rate_limit_detail(error_msg: str) -> str:
+    """Return a user-friendly 429 message for Gemini API errors, with retry time if available."""
+    match = re.search(r"Please retry in ([\d\.]+)s", error_msg)
+    if match:
+        retry_time = int(round(float(match.group(1))))
+        return f"Gemini AI is currently too busy or has reached its limit. Please try again in {retry_time} seconds."
+    return "Gemini AI is currently too busy or has reached its limit. Please wait a moment and try again."
+
+def _hf_rate_limit_detail(error_msg: str) -> str:
+    """Return a user-friendly 429 message for Hugging Face API errors, with retry time if available."""
+    match = (
+        re.search(r"Please retry in ([\d\.]+)s", error_msg) or
+        re.search(r"retry after (\d+)", error_msg, re.IGNORECASE) or
+        re.search(r"(\d+)\s*second", error_msg, re.IGNORECASE)
+    )
+    if match:
+        retry_time = int(round(float(match.group(1))))
+        return f"Hugging Face embedding service is too busy or has reached its limit. Please try again in {retry_time} seconds."
+    return "Hugging Face embedding service is too busy or has reached its limit. Please wait a moment and try again."
 
 # ─────────────────────────────────────────────
 #  Database helpers
@@ -262,8 +286,8 @@ async def upload_document(
         }
     except Exception as e:
         error_msg = str(e)
-        if "429" in error_msg or "Quota" in error_msg or "ResourceExhausted" in error_msg:
-            raise HTTPException(status_code=429, detail="The AI is currently too busy or has reached its limit. Please wait a moment and try again.")
+        if "429" in error_msg or "Rate limit" in error_msg or "Too Many Requests" in error_msg:
+            raise HTTPException(status_code=429, detail=_hf_rate_limit_detail(error_msg))
         raise HTTPException(status_code=500, detail="Something went wrong during upload. Please try again later.")
 
 
@@ -288,10 +312,17 @@ async def ask_question(request: Request, query: QueryRequest):
     if not llm_model:
         raise HTTPException(status_code=503, detail="No Gemini API key configured. Please provide your own key in the API Keys panel.")
 
+    # ── Step 1: Embed the query (Hugging Face) ──
     try:
-        # Embed the query
         query_embedding = get_embeddings([query.question], hf_client)[0]
+    except Exception as e:
+        error_msg = str(e)
+        if "429" in error_msg or "Rate limit" in error_msg or "Too Many Requests" in error_msg:
+            raise HTTPException(status_code=429, detail=_hf_rate_limit_detail(error_msg))
+        raise HTTPException(status_code=500, detail="Something went wrong generating embeddings. Please try again later.")
 
+    # ── Step 2: Vector search + Gemini answer generation ──
+    try:
         # Search pgvector within this session
         conn = get_db_connection()
         cur = conn.cursor()
@@ -333,16 +364,8 @@ Answer in markdown format."""
     except Exception as e:
         error_msg = str(e)
         if "429" in error_msg or "Quota" in error_msg or "ResourceExhausted" in error_msg:
-            import re
-            match = re.search(r"Please retry in ([\d\.]+)s", error_msg)
-            if match:
-                retry_time = int(round(float(match.group(1))))
-                detail = f"The AI is currently too busy or has reached its limit. Please try again in {retry_time} seconds."
-            else:
-                detail = "The AI is currently too busy or has reached its limit. Please wait a moment and try again."
-            raise HTTPException(status_code=429, detail=detail)
-        else:
-            raise HTTPException(status_code=500, detail="Something went wrong. Please try again later.")
+            raise HTTPException(status_code=429, detail=_gemini_rate_limit_detail(error_msg))
+        raise HTTPException(status_code=500, detail="Something went wrong. Please try again later.")
 
 # ─────────────────────────────────────────────
 #  GET /documents
