@@ -234,22 +234,22 @@ function App() {
         <button
           id="byok-panel-toggle"
           onClick={() => setShowKeyPanel(!showKeyPanel)}
-          className="w-full flex items-center justify-between p-5 font-black text-sm uppercase tracking-wider hover:bg-gray-50 transition-colors cursor-pointer"
+          className="w-full flex items-center justify-between p-3 sm:p-5 font-black text-xs sm:text-sm uppercase tracking-wider hover:bg-gray-50 transition-colors cursor-pointer gap-2"
           aria-expanded={showKeyPanel}
         >
-          <span className="flex items-center gap-3">
-            🔑 API Keys
+          <span className="flex items-center gap-2 sm:gap-3 overflow-hidden">
+            <span className="whitespace-nowrap">🔑 API Keys</span>
             {isByokActive ? (
-              <span className="text-xs font-bold px-2 py-0.5 bg-green-300 border-2 border-black">
+              <span className="text-[10px] sm:text-xs font-bold px-1.5 sm:px-2 py-0.5 bg-green-300 border-2 border-black whitespace-nowrap truncate">
                 BYOK Active
               </span>
             ) : (
-              <span className="text-xs font-bold px-2 py-0.5 bg-gray-200 border-2 border-black">
-                Using Default Keys
+              <span className="text-[10px] sm:text-xs font-bold px-1.5 sm:px-2 py-0.5 bg-gray-200 border-2 border-black whitespace-nowrap truncate">
+                Default Keys
               </span>
             )}
           </span>
-          <span className="text-lg">{showKeyPanel ? '▲' : '▼'}</span>
+          <span className="text-base sm:text-lg flex-shrink-0">{showKeyPanel ? '▲' : '▼'}</span>
         </button>
 
         {/* Collapsible body */}
