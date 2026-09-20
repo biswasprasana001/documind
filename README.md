@@ -283,7 +283,7 @@ cd frontend && npm run lint
 
 ## 📄 License
 
-Distributed under the **MIT License**. See <a href=https://github.com/biswasprasana001/AI_Integration/blob/main/LICENSE>LICENSE</a> for more information.
+Distributed under the **MIT License**. See <a href=http://github.com/biswasprasana001/documind/blob/main/LICENSE>LICENSE</a> for more information.
 
 ---
 
