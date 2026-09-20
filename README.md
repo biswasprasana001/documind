@@ -19,18 +19,10 @@
 
 ## 📽️ Project Walkthrough & Demo
 
-<!-- ========================================================================= -->
-<!-- ADD YOUR DEMO VIDEO OR GIF HERE:                                         -->
-<!-- 1. For a GIF: Save your GIF into the `assets/` folder and update below.  -->
-<!--    Example: ![App Walkthrough](assets/demo.gif)                          -->
-<!-- 2. For a Video: Use GitHub release asset / raw link or HTML5 video tag.  -->
-<!-- ========================================================================= -->
-
 <div align="center">
 
-<!-- Replace the placeholder below with your GIF or Video link when ready -->
 <p align="center">
-  <img src="https://via.placeholder.com/1200x630/18181b/ffffff?text=Document+Q%26A+AI+Walkthrough+Video+%2F+GIF+Coming+Soon" alt="Document Q&A AI Walkthrough Demo" width="100%" />
+
 </p>
 
 </div>
@@ -74,47 +66,7 @@
 
 ## 🏗️ Architecture & RAG Pipeline
 
-```mermaid
-flowchart TD
-    subgraph Client["Frontend (React 19 + Tailwind v4)"]
-        UI[User UI / Workspace]
-        BYOK[BYOK Key Panel]
-        UploadUI[File Uploader PDF/TXT]
-        ChatUI[Markdown Chat Interface]
-    end
 
-    subgraph Server["FastAPI Backend"]
-        Parser[PyMuPDF Text Extractor]
-        Splitter[Recursive Character Text Splitter]
-        Limiter[SlowAPI Rate Limiter]
-        Endpoints["FastAPI Router (/upload, /ask, /verify-keys)"]
-    end
-
-    subgraph AI_Services["External AI Services"]
-        HF["Hugging Face Inference\n(all-MiniLM-L6-v2)"]
-        Gemini["Google Gemini 3.6 Flash"]
-    end
-
-    subgraph DB["PostgreSQL 16 + pgvector"]
-        VecTable[("documents Table\nsession_id | filename | content | embedding")]
-        CosSearch["Cosine Distance Search\n<=> Top 8 Chunks"]
-    end
-
-    UploadUI -->|1. Upload File & Session ID| Endpoints
-    Endpoints --> Parser --> Splitter
-    Splitter -->|2. Batch Chunks| HF
-    HF -->|3. 384d Vectors| Endpoints
-    Endpoints -->|4. Store Records| VecTable
-
-    ChatUI -->|5. Submit Question| Endpoints
-    Endpoints -->|6. Query Embeddings| HF
-    HF -->|7. Query Vector| Endpoints
-    Endpoints -->|8. Vector Similarity Query| CosSearch
-    CosSearch -->|9. Top Context Chunks| Endpoints
-    Endpoints -->|10. Context + Question Prompt| Gemini
-    Gemini -->|11. Synthesized Markdown Answer| Endpoints
-    Endpoints -->|12. Streamed/Returned Response| ChatUI
-```
 
 ---
 
