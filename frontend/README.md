@@ -1,32 +1,22 @@
-# React + TypeScript + Vite
+# Upload, Ask, Chat! — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+The React + Tailwind CSS frontend for the **Document Q&A AI** application.
 
-Currently, two official plugins are available:
+Upload PDF or TXT files, then ask questions — the AI combines context from all your documents to generate answers.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Tech Stack
 
-## React Compiler
+- React 19, TypeScript, Vite
+- Tailwind CSS v4 (Neo Brutalism design)
+- react-markdown for AI response rendering
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Development
 
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Open Source
+
+This is an open-source project. Contributions, issues, and pull requests are welcome!
