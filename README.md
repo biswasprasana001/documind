@@ -1,4 +1,4 @@
-# 🧠 Document Q&A AI — Upload, Ask, Chat!
+# 🧠 DocuMind — Document Q&A AI
 
 <p align="center">
   <strong>A full-stack, multi-document Retrieval-Augmented Generation (RAG) platform powered by Google Gemini, Hugging Face, PostgreSQL with pgvector, and FastAPI with a bold Neo-Brutalist React UI.</strong>

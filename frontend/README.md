@@ -1,4 +1,4 @@
-# Upload, Ask, Chat! — Frontend
+# DocuMind! — Frontend
 
 The React + Tailwind CSS frontend for the **Document Q&A AI** application.
 
