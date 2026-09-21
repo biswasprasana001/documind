@@ -23,6 +23,8 @@
 
 <p align="center">
 
+https://github.com/user-attachments/assets/b937b9c6-5e63-4def-80e1-3ae130eb8772
+
 </p>
 
 </div>
@@ -53,7 +55,7 @@
 
 - **🛡️ Intelligent Rate Limiting & User-Friendly Errors**:
   - Tiered rate limits powered by **SlowAPI**: standard users get 15 req/min, BYOK users receive an elevated 100 req/min quota.
-  - Automatically parses upstream API `429 Too Many Requests` retry headers into human-readable duration strings (e.g., *"Please try again in 1 minute 15 seconds"*).
+  - Automatically parses upstream API `429 Too Many Requests` retry headers into human-readable duration strings.
 
 - **🔒 Ephemeral Privacy & One-Click Workspace Wipe**:
   - Each browser tab generates an isolated UUID session.
