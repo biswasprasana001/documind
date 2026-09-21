@@ -86,47 +86,17 @@ def get_ai_clients(request: Request):
 # ─────────────────────────────────────────────
 #  Rate-limit error message helpers
 # ─────────────────────────────────────────────
-def _format_retry_duration(total_seconds: int) -> str:
-    """Convert a number of seconds into a human-readable duration string.
-    Only non-zero units are included, e.g. '1 hour 23 minutes 45 seconds'.
-    """
-    days, remainder = divmod(total_seconds, 86400)
-    hours, remainder = divmod(remainder, 3600)
-    minutes, seconds = divmod(remainder, 60)
-
-    parts = []
-    if days:
-        parts.append(f"{days} day{'s' if days != 1 else ''}")
-    if hours:
-        parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
-    if minutes:
-        parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
-    if seconds or not parts:  # always show seconds if nothing else is non-zero
-        parts.append(f"{seconds} second{'s' if seconds != 1 else ''}")
-
-    return " ".join(parts)
+def _get_rate_limit_msg(service_name: str) -> str:
+    return f"{service_name} is currently too busy or has reached its limit. Please wait a moment and try again."
 
 def _gemini_rate_limit_detail(error_msg: str) -> str:
-    """Return a user-friendly 429 message for Gemini API errors, with retry time if available."""
-    match = re.search(r"Please retry in ([\d\.]+)s", error_msg)
-    if match:
-        total_seconds = int(round(float(match.group(1))))
-        duration = _format_retry_duration(total_seconds)
-        return f"Gemini AI is currently too busy or has reached its limit. Please try again in {duration}."
-    return "Gemini AI is currently too busy or has reached its limit. Please wait a moment and try again."
+    """Return a user-friendly 429 message for Gemini API errors."""
+    return _get_rate_limit_msg("Gemini AI")
 
 def _hf_rate_limit_detail(error_msg: str) -> str:
-    """Return a user-friendly 429 message for Hugging Face API errors, with retry time if available."""
-    match = (
-        re.search(r"Please retry in ([\d\.]+)s", error_msg) or
-        re.search(r"retry after (\d+)", error_msg, re.IGNORECASE) or
-        re.search(r"(\d+)\s*second", error_msg, re.IGNORECASE)
-    )
-    if match:
-        total_seconds = int(round(float(match.group(1))))
-        duration = _format_retry_duration(total_seconds)
-        return f"Hugging Face embedding service is too busy or has reached its limit. Please try again in {duration}."
-    return "Hugging Face embedding service is too busy or has reached its limit. Please wait a moment and try again."
+    """Return a user-friendly 429 message for Hugging Face API errors."""
+    return _get_rate_limit_msg("Hugging Face embedding service")
+
 
 # ─────────────────────────────────────────────
 #  Database helpers
