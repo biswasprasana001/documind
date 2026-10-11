@@ -16,7 +16,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from google import generativeai as genai
 from dotenv import load_dotenv
 import time
-from huggingface_hub import InferenceClient
+from fastembed import TextEmbedding
 from pgvector.psycopg2 import register_vector
 
 load_dotenv()
@@ -34,7 +34,8 @@ if GEMINI_API_KEY:
 else:
     _default_llm = None
 
-_default_hf_client = InferenceClient(api_key=HF_API_KEY) if HF_API_KEY else None
+# Initialize fastembed locally
+_embedding_model = TextEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
 # ─────────────────────────────────────────────
 #  Rate limiter — BYOK users get 100/min,
@@ -80,8 +81,7 @@ def get_ai_clients(request: Request):
     else:
         llm = _default_llm
 
-    hf = InferenceClient(api_key=user_hf_key) if user_hf_key else _default_hf_client
-    return llm, hf
+    return llm, _embedding_model
 
 # ─────────────────────────────────────────────
 #  Rate-limit error message helpers
@@ -129,6 +129,7 @@ def init_db(max_retries=10, delay=2):
                 );
                 ALTER TABLE documents ADD COLUMN IF NOT EXISTS session_id text;
                 CREATE INDEX IF NOT EXISTS idx_documents_session_id ON documents (session_id);
+                ALTER TABLE documents ALTER COLUMN embedding TYPE vector(384);
             """)
             conn.commit()
             cur.close()
@@ -149,16 +150,10 @@ init_db()
 # ─────────────────────────────────────────────
 #  Embedding helper (uses per-request hf client)
 # ─────────────────────────────────────────────
-def get_embeddings(texts: list[str], hf_client) -> list[list[float]]:
-    if not hf_client:
-        raise Exception("HF_API_KEY is not set and no user key was provided")
-    embeddings = hf_client.feature_extraction(texts, model="sentence-transformers/all-MiniLM-L6-v2")
-    if hasattr(embeddings, "tolist"):
-        res = embeddings.tolist()
-    else:
-        res = embeddings
-    if texts and isinstance(res, list) and res and not isinstance(res[0], list):
-        res = [res]
+def get_embeddings(texts: list[str], embedding_model) -> list[list[float]]:
+    # fastembed yields generators of numpy arrays
+    embeddings_gen = embedding_model.embed(texts)
+    res = [emb.tolist() for emb in embeddings_gen]
     return res
 
 # ─────────────────────────────────────────────
@@ -191,23 +186,11 @@ async def verify_keys(payload: VerifyKeysRequest):
     else:
         result["gemini"] = {"ok": None, "message": "No key provided"}
 
-    # Test HuggingFace key
+    # Hugging Face is now running locally via fastembed
     if payload.hf_key.strip():
-        try:
-            hf = InferenceClient(api_key=payload.hf_key.strip())
-            embeddings = hf.feature_extraction(["test"], model="sentence-transformers/all-MiniLM-L6-v2")
-            result["hf"] = {"ok": True, "message": "Valid ✅ — embeddings returned successfully"}
-        except Exception as e:
-            err_str = str(e)
-            if "429" in err_str:
-                msg = "Quota Exceeded. Please check your plan and billing details."
-            elif any(code in err_str for code in ["400", "401", "403"]):
-                msg = "Invalid API Key. Please verify your key is correct and active."
-            else:
-                msg = "An unexpected error occurred during verification."
-            result["hf"] = {"ok": False, "message": f"Invalid ❌ — {msg}"}
+        result["hf"] = {"ok": True, "message": "Valid ✅ — (Note: We now run embeddings locally for free!)"}
     else:
-        result["hf"] = {"ok": None, "message": "No key provided"}
+        result["hf"] = {"ok": None, "message": "No key provided. (Not needed, embeddings run locally!)"}
 
     return result
 
@@ -249,19 +232,20 @@ async def upload_document(
     if len(chunks) > 100:
         raise HTTPException(status_code=400, detail="Document too large (too many chunks).")
 
-    _, hf_client = get_ai_clients(request)
+    _, embedding_model = get_ai_clients(request)
 
     try:
         conn = get_db_connection()
         cur = conn.cursor()
 
         # Batch insert for efficiency
-        embeddings = get_embeddings(chunks, hf_client)
+        embeddings = get_embeddings(chunks, embedding_model)
 
-        records = [(session_id, file.filename, chunk, embedding) for chunk, embedding in zip(chunks, embeddings)]
+        records = [(session_id, file.filename, chunk, json.dumps(embedding)) for chunk, embedding in zip(chunks, embeddings)]
         execute_values(cur,
             "INSERT INTO documents (session_id, filename, content, embedding) VALUES %s",
-            records
+            records,
+            template="(%s, %s, %s, %s::vector)"
         )
         conn.commit()
 
@@ -299,14 +283,14 @@ class ClearRequest(BaseModel):
 @app.post("/ask")
 @limiter.limit("100/minute", key_func=lambda request: f"byok:{get_remote_address(request)}" if (request.headers.get("X-Gemini-API-Key") or request.headers.get("X-HF-API-Key")) else get_remote_address(request))
 async def ask_question(request: Request, query: QueryRequest):
-    llm_model, hf_client = get_ai_clients(request)
+    llm_model, embedding_model = get_ai_clients(request)
 
     if not llm_model:
         raise HTTPException(status_code=503, detail="No Gemini API key configured. Please provide your own key in the API Keys panel.")
 
-    # ── Step 1: Embed the query (Hugging Face) ──
+    # ── Step 1: Embed the query ──
     try:
-        query_embedding = get_embeddings([query.question], hf_client)[0]
+        query_embedding = get_embeddings([query.question], embedding_model)[0]
     except Exception as e:
         error_msg = str(e)
         if "429" in error_msg or "Rate limit" in error_msg or "Too Many Requests" in error_msg:

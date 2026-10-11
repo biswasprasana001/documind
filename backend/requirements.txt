@@ -14,7 +14,7 @@ slowapi==0.1.10
 
 # AI Services & Cloud Embedding Inference
 google-generativeai==0.8.6
-huggingface-hub==1.31.0
+fastembed
 
 # Document Ingestion & Chunking
 PyMuPDF==1.28.2
