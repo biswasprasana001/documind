@@ -25,7 +25,6 @@ load_dotenv()
 #  Server-side default AI credentials
 # ─────────────────────────────────────────────
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-HF_API_KEY = os.getenv("HF_API_KEY")
 DB_URL = os.getenv("DATABASE_URL")
 
 if GEMINI_API_KEY:
@@ -44,9 +43,8 @@ _embedding_model = TextEmbedding(model_name="sentence-transformers/all-MiniLM-L6
 def byok_aware_key(request: Request) -> str:
     """Rate-limit key: BYOK requests get a separate, higher-quota bucket."""
     has_gemini = bool(request.headers.get("X-Gemini-API-Key", "").strip())
-    has_hf = bool(request.headers.get("X-HF-API-Key", "").strip())
     ip = get_remote_address(request)
-    if has_gemini or has_hf:
+    if has_gemini:
         return f"byok:{ip}"
     return ip
 
@@ -69,11 +67,10 @@ app.add_middleware(
 # ─────────────────────────────────────────────
 def get_ai_clients(request: Request):
     """
-    Returns (llm_model, hf_client) resolved for this request.
-    If BYOK headers are present they take precedence over server defaults.
+    Returns (llm_model, embedding_model) resolved for this request.
+    If BYOK Gemini key is present it takes precedence over server defaults.
     """
     user_gemini_key = request.headers.get("X-Gemini-API-Key", "").strip()
-    user_hf_key = request.headers.get("X-HF-API-Key", "").strip()
 
     if user_gemini_key:
         genai.configure(api_key=user_gemini_key)
@@ -92,10 +89,6 @@ def _get_rate_limit_msg(service_name: str) -> str:
 def _gemini_rate_limit_detail(error_msg: str) -> str:
     """Return a user-friendly 429 message for Gemini API errors."""
     return _get_rate_limit_msg("Gemini AI")
-
-def _hf_rate_limit_detail(error_msg: str) -> str:
-    """Return a user-friendly 429 message for Hugging Face API errors."""
-    return _get_rate_limit_msg("Hugging Face embedding service")
 
 
 # ─────────────────────────────────────────────
@@ -161,7 +154,6 @@ def get_embeddings(texts: list[str], embedding_model) -> list[list[float]]:
 # ─────────────────────────────────────────────
 class VerifyKeysRequest(BaseModel):
     gemini_key: str = ""
-    hf_key: str = ""
 
 @app.post("/verify-keys")
 async def verify_keys(payload: VerifyKeysRequest):
@@ -186,19 +178,13 @@ async def verify_keys(payload: VerifyKeysRequest):
     else:
         result["gemini"] = {"ok": None, "message": "No key provided"}
 
-    # Hugging Face is now running locally via fastembed
-    if payload.hf_key.strip():
-        result["hf"] = {"ok": True, "message": "Valid ✅ — (Note: We now run embeddings locally for free!)"}
-    else:
-        result["hf"] = {"ok": None, "message": "No key provided. (Not needed, embeddings run locally!)"}
-
     return result
 
 # ─────────────────────────────────────────────
 #  POST /upload
 # ─────────────────────────────────────────────
 @app.post("/upload")
-@limiter.limit("100/minute", key_func=lambda request: f"byok:{get_remote_address(request)}" if (request.headers.get("X-Gemini-API-Key") or request.headers.get("X-HF-API-Key")) else get_remote_address(request))
+@limiter.limit("100/minute", key_func=lambda request: f"byok:{get_remote_address(request)}" if request.headers.get("X-Gemini-API-Key") else get_remote_address(request))
 async def upload_document(
     request: Request,
     file: UploadFile = File(...),
@@ -261,9 +247,6 @@ async def upload_document(
             "documents": documents
         }
     except Exception as e:
-        error_msg = str(e)
-        if "429" in error_msg or "Rate limit" in error_msg or "Too Many Requests" in error_msg:
-            raise HTTPException(status_code=429, detail=_hf_rate_limit_detail(error_msg))
         raise HTTPException(status_code=500, detail="Something went wrong during upload. Please try again later.")
 
 
@@ -281,7 +264,7 @@ class ClearRequest(BaseModel):
 #  POST /ask
 # ─────────────────────────────────────────────
 @app.post("/ask")
-@limiter.limit("100/minute", key_func=lambda request: f"byok:{get_remote_address(request)}" if (request.headers.get("X-Gemini-API-Key") or request.headers.get("X-HF-API-Key")) else get_remote_address(request))
+@limiter.limit("100/minute", key_func=lambda request: f"byok:{get_remote_address(request)}" if request.headers.get("X-Gemini-API-Key") else get_remote_address(request))
 async def ask_question(request: Request, query: QueryRequest):
     llm_model, embedding_model = get_ai_clients(request)
 
@@ -292,9 +275,6 @@ async def ask_question(request: Request, query: QueryRequest):
     try:
         query_embedding = get_embeddings([query.question], embedding_model)[0]
     except Exception as e:
-        error_msg = str(e)
-        if "429" in error_msg or "Rate limit" in error_msg or "Too Many Requests" in error_msg:
-            raise HTTPException(status_code=429, detail=_hf_rate_limit_detail(error_msg))
         raise HTTPException(status_code=500, detail="Something went wrong generating embeddings. Please try again later.")
 
     # ── Step 2: Vector search + Gemini answer generation ──

@@ -2,22 +2,22 @@
 @config "../tailwind.config.js";
 
 @layer base {
-  body {
-    @apply bg-brutal-bg text-gray-900 font-sans;
+  html, body {
+    @apply bg-brutal-bg text-gray-900 font-sans overflow-x-hidden;
   }
 }
 
 /* Neo Brutalism Custom Utilities */
 @layer utilities {
   .brutal-btn {
-    @apply bg-brutal-primary text-black font-bold py-2 px-4 border-2 border-black shadow-brutal transition-transform active:translate-x-1 active:translate-y-1 active:shadow-none hover:bg-brutal-yellow;
+    @apply bg-brutal-primary text-black font-black py-2.5 px-4 border-2 border-black shadow-brutal transition-all active:translate-x-0.5 active:translate-y-0.5 active:shadow-none hover:bg-brutal-yellow cursor-pointer disabled:bg-gray-200 disabled:text-gray-400 disabled:border-gray-400 disabled:shadow-none disabled:cursor-not-allowed disabled:transform-none select-none text-center;
   }
   
   .brutal-input {
-    @apply bg-white border-2 border-black p-2 shadow-brutal-sm focus:outline-none focus:ring-2 focus:ring-brutal-secondary focus:border-black;
+    @apply bg-white border-2 border-black p-2.5 shadow-brutal-sm text-sm focus:outline-none focus:ring-2 focus:ring-black focus:border-black transition-all max-w-full;
   }
 
   .brutal-card {
-    @apply bg-white border-2 border-black p-6 shadow-brutal;
+    @apply bg-white border-2 border-black p-4 sm:p-6 shadow-brutal max-w-full;
   }
 }

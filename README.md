@@ -38,8 +38,8 @@ https://github.com/user-attachments/assets/b937b9c6-5e63-4def-80e1-3ae130eb8772
   - Intelligent chunking via LangChain's **RecursiveCharacterTextSplitter** (1,000-character windows with 200-character overlap).
   - Built-in guardrails: 5MB maximum file size and 100-chunk threshold per document to prevent context abuse.
 
-- **⚡ Cloud Embeddings & High-Speed Vector Retrieval**:
-  - Generates dense 384-dimensional vector representations using Hugging Face's `sentence-transformers/all-MiniLM-L6-v2` via the cloud `InferenceClient`.
+- **⚡ Fast Local Embeddings & High-Speed Vector Retrieval**:
+  - Generates dense 384-dimensional vector representations locally using **Fastembed** (`sentence-transformers/all-MiniLM-L6-v2`) at $0 cost without external API limits.
   - Stored and indexed in **PostgreSQL 16** with native **`pgvector`** vector search using cosine distance (`<=>`).
   - Top-8 most relevant chunks fetched concurrently across all documents in the active session.
 
@@ -49,8 +49,8 @@ https://github.com/user-attachments/assets/b937b9c6-5e63-4def-80e1-3ae130eb8772
   - Responses rendered beautifully with markdown styling, tables, and code snippets.
 
 - **🔑 Bring Your Own Key (BYOK) with Instant Verification**:
-  - Run with server defaults or allow users to supply their personal Gemini and Hugging Face API keys.
-  - Keys stored client-side in `localStorage` and sent over secure per-request headers (`X-Gemini-API-Key`, `X-HF-API-Key`).
+  - Run with server defaults or allow users to supply their personal Google Gemini API key.
+  - Key stored client-side in `localStorage` and sent over secure per-request headers (`X-Gemini-API-Key`).
   - In-app **Key Verification Panel** tests credentials against upstream AI endpoints before saving.
 
 - **🛡️ Intelligent Rate Limiting & User-Friendly Errors**:
