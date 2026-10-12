@@ -67,51 +67,6 @@ https://github.com/user-attachments/assets/a52b5c47-7027-4199-874a-4ffed19f144b
 
 ---
 
-## 🏗️ Architecture & RAG Pipeline
-
-```mermaid
-flowchart TD
-    subgraph Client["Frontend (React 19 + Tailwind CSS v4)"]
-        UI["Neo-Brutalist Interface"]
-        BYOK["BYOK Key Panel (localStorage)"]
-        Session["Session Manager (UUID)"]
-    end
-
-    subgraph Backend["FastAPI Backend Service"]
-        API["FastAPI App + SlowAPI Limiter"]
-        Parser["PyMuPDF (fitz)"]
-        Splitter["RecursiveCharacterTextSplitter"]
-        Embedder["Fastembed (Local MiniLM-L6-v2)"]
-        RAG["RAG Synthesizer"]
-    end
-
-    subgraph DB["PostgreSQL 16 + pgvector"]
-        VectorDB[("documents Table\nembedding vector(384)\nsession_id index")]
-    end
-
-    subgraph AI["External Services"]
-        Gemini["Google Gemini 3.6 Flash"]
-    end
-
-    %% Ingestion Flow
-    UI -->|"1. Upload .pdf / .txt + session_id"| API
-    API -->|"2. Extract Text"| Parser
-    Parser -->|"3. Chunk Text (1000/200)"| Splitter
-    Splitter -->|"4. Generate 384-d Vectors (Local)"| Embedder
-    Embedder -->|"5. Batch Insert"| VectorDB
-
-    %% Query Flow
-    UI -->|"6. Question + session_id (+ X-Gemini-API-Key)"| API
-    API -->|"7. Embed Query (Local)"| Embedder
-    Embedder -->|"8. Cosine Similarity (<=>) Top-8"| VectorDB
-    VectorDB -->|"9. Matched Chunks + Sources"| RAG
-    RAG -->|"10. Prompt + Context Synthesis"| Gemini
-    Gemini -->|"11. Grounded Markdown Answer"| RAG
-    RAG -->|"12. Formatted Response"| UI
-```
-
----
-
 ## 🛠️ Tech Stack
 
 | Domain | Technology | Purpose |
