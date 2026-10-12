@@ -1,7 +1,7 @@
 # 🧠 DocuMind — Document Q&A AI
 
 <p align="center">
-  <strong>A full-stack, multi-document Retrieval-Augmented Generation (RAG) platform powered by Google Gemini, Hugging Face, PostgreSQL with pgvector, and FastAPI with a bold Neo-Brutalist React UI.</strong>
+  <strong>A full-stack, multi-document Retrieval-Augmented Generation (RAG) platform powered by Google Gemini, Fastembed local embeddings, PostgreSQL with pgvector, and FastAPI with a bold Neo-Brutalist React UI.</strong>
 </p>
 
 <p align="center">
@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/FastAPI-0.141-009688?logo=fastapi&logoColor=white&style=for-the-badge" alt="FastAPI" />
   <img src="https://img.shields.io/badge/PostgreSQL-16%20%2B%20pgvector-336791?logo=postgresql&logoColor=white&style=for-the-badge" alt="PostgreSQL pgvector" />
   <img src="https://img.shields.io/badge/Google%20Gemini-3.6%20Flash-4285F4?logo=google&logoColor=white&style=for-the-badge" alt="Google Gemini" />
-  <img src="https://img.shields.io/badge/Hugging%20Face-Embeddings-FFD21E?logo=huggingface&logoColor=black&style=for-the-badge" alt="Hugging Face" />
+  <img src="https://img.shields.io/badge/Fastembed-Local%20MiniLM--L6--v2-FF6F00?logo=python&logoColor=white&style=for-the-badge" alt="Fastembed Local" />
   <img src="https://img.shields.io/badge/Tailwind_CSS-v4.0-38B2AC?logo=tailwindcss&logoColor=white&style=for-the-badge" alt="Tailwind CSS v4" />
   <img src="https://img.shields.io/badge/Docker-Compose_Ready-2496ED?logo=docker&logoColor=white&style=for-the-badge" alt="Docker" />
   <img src="https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge" alt="License MIT" />
@@ -38,10 +38,10 @@ https://github.com/user-attachments/assets/b937b9c6-5e63-4def-80e1-3ae130eb8772
   - Intelligent chunking via LangChain's **RecursiveCharacterTextSplitter** (1,000-character windows with 200-character overlap).
   - Built-in guardrails: 5MB maximum file size and 100-chunk threshold per document to prevent context abuse.
 
-- **⚡ Fast Local Embeddings & High-Speed Vector Retrieval**:
-  - Generates dense 384-dimensional vector representations locally using **Fastembed** (`sentence-transformers/all-MiniLM-L6-v2`) at $0 cost without external API limits.
+- **⚡ 100% Free Local Embeddings & Vector Search**:
+  - Generates dense 384-dimensional vector representations locally using **Fastembed** (`sentence-transformers/all-MiniLM-L6-v2`) via ONNX Runtime — **$0 cost and zero external embedding API limits**.
   - Stored and indexed in **PostgreSQL 16** with native **`pgvector`** vector search using cosine distance (`<=>`).
-  - Top-8 most relevant chunks fetched concurrently across all documents in the active session.
+  - Top-8 most relevant chunks retrieved across all uploaded documents in the active session.
 
 - **🤖 Cross-Document Synthesis with Google Gemini**:
   - Direct integration with **Gemini 3.6 Flash** for near-instant answers.
@@ -51,7 +51,7 @@ https://github.com/user-attachments/assets/b937b9c6-5e63-4def-80e1-3ae130eb8772
 - **🔑 Bring Your Own Key (BYOK) with Instant Verification**:
   - Run with server defaults or allow users to supply their personal Google Gemini API key.
   - Key stored client-side in `localStorage` and sent over secure per-request headers (`X-Gemini-API-Key`).
-  - In-app **Key Verification Panel** tests credentials against upstream AI endpoints before saving.
+  - In-app **Key Verification Panel** tests credentials against upstream AI endpoints (`/verify-keys`) before saving.
 
 - **🛡️ Intelligent Rate Limiting & User-Friendly Errors**:
   - Tiered rate limits powered by **SlowAPI**: standard users get 15 req/min, BYOK users receive an elevated 100 req/min quota.
@@ -68,7 +68,46 @@ https://github.com/user-attachments/assets/b937b9c6-5e63-4def-80e1-3ae130eb8772
 
 ## 🏗️ Architecture & RAG Pipeline
 
+```mermaid
+flowchart TD
+    subgraph Client["Frontend (React 19 + Tailwind CSS v4)"]
+        UI["Neo-Brutalist Interface"]
+        BYOK["BYOK Key Panel (localStorage)"]
+        Session["Session Manager (UUID)"]
+    end
 
+    subgraph Backend["FastAPI Backend Service"]
+        API["FastAPI App + SlowAPI Limiter"]
+        Parser["PyMuPDF (fitz)"]
+        Splitter["RecursiveCharacterTextSplitter"]
+        Embedder["Fastembed (Local MiniLM-L6-v2)"]
+        RAG["RAG Synthesizer"]
+    end
+
+    subgraph DB["PostgreSQL 16 + pgvector"]
+        VectorDB[("documents Table\nembedding vector(384)\nsession_id index")]
+    end
+
+    subgraph AI["External Services"]
+        Gemini["Google Gemini 3.6 Flash"]
+    end
+
+    %% Ingestion Flow
+    UI -->|"1. Upload .pdf / .txt + session_id"| API
+    API -->|"2. Extract Text"| Parser
+    Parser -->|"3. Chunk Text (1000/200)"| Splitter
+    Splitter -->|"4. Generate 384-d Vectors (Local)"| Embedder
+    Embedder -->|"5. Batch Insert"| VectorDB
+
+    %% Query Flow
+    UI -->|"6. Question + session_id (+ X-Gemini-API-Key)"| API
+    API -->|"7. Embed Query (Local)"| Embedder
+    Embedder -->|"8. Cosine Similarity (<=>) Top-8"| VectorDB
+    VectorDB -->|"9. Matched Chunks + Sources"| RAG
+    RAG -->|"10. Prompt + Context Synthesis"| Gemini
+    Gemini -->|"11. Grounded Markdown Answer"| RAG
+    RAG -->|"12. Formatted Response"| UI
+```
 
 ---
 
@@ -81,11 +120,11 @@ https://github.com/user-attachments/assets/b937b9c6-5e63-4def-80e1-3ae130eb8772
 | **Styling** | [Tailwind CSS v4](https://tailwindcss.com/) | Neo-Brutalism design system and responsive styling |
 | **Markdown** | [react-markdown](https://github.com/remarkjs/react-markdown) | Formatted AI output rendering |
 | **Backend API** | [FastAPI](https://fastapi.tiangolo.com/) + [Uvicorn](https://www.uvicorn.org/) | High-performance asynchronous Python web framework |
-| **Text Extraction** | [PyMuPDF](https://pymupdf.readthedocs.io/) (`fitz`) | Fast PDF document stream parsing |
-| **Text Chunking** | [LangChain Text Splitters](https://python.langchain.com/) | Semantic overlap character chunking |
-| **Embeddings** | [Hugging Face Inference Hub](https://huggingface.co/) | Cloud inference for `sentence-transformers/all-MiniLM-L6-v2` |
+| **Text Extraction** | [PyMuPDF](https://pymupdf.readthedocs.io/) (`fitz`) | Fast PDF & TXT document stream parsing |
+| **Text Chunking** | [LangChain Text Splitters](https://python.langchain.com/) | Semantic overlap character chunking (1000/200) |
+| **Embeddings** | [Fastembed](https://qdrant.github.io/fastembed/) | Local, zero-cost ONNX inference for `sentence-transformers/all-MiniLM-L6-v2` |
 | **LLM Model** | [Google Gemini](https://ai.google.dev/) (`gemini-3.6-flash`) | Multi-document synthesis and question answering |
-| **Vector Database** | [PostgreSQL 16](https://www.postgresql.org/) + [pgvector](https://github.com/pgvector/pgvector) | Relational storage & native vector similarity indexing |
+| **Vector Database** | [PostgreSQL 16](https://www.postgresql.org/) + [pgvector](https://github.com/pgvector/pgvector) | Relational storage & native vector similarity indexing (`vector(384)`) |
 | **Rate Limiter** | [SlowAPI](https://github.com/laurentS/slowapi) | In-memory IP and BYOK-aware request rate limiting |
 | **Containerization** | [Docker](https://www.docker.com/) & [Docker Compose](https://docs.docker.com/compose/) | Full container orchestration for DB, backend, and frontend |
 
@@ -96,7 +135,7 @@ https://github.com/user-attachments/assets/b937b9c6-5e63-4def-80e1-3ae130eb8772
 ```text
 ├── backend/
 │   ├── Dockerfile                  # Python 3.12-slim backend container
-│   ├── requirements.txt            # Production dependencies (FastAPI, PyMuPDF, etc.)
+│   ├── requirements.txt            # Production dependencies (FastAPI, PyMuPDF, fastembed, etc.)
 │   ├── main.py                     # API routing, RAG pipeline, DB migrations & BYOK
 │   ├── .env.example                # Template for environment variables
 │   └── .env                        # Local environment credentials (ignored by git)
@@ -112,6 +151,7 @@ https://github.com/user-attachments/assets/b937b9c6-5e63-4def-80e1-3ae130eb8772
 │       └── main.tsx                # React DOM root mounting
 │
 ├── docker-compose.yml              # Complete multi-service stack orchestration
+├── LICENSE                         # MIT License
 └── README.md                       # Project documentation
 ```
 
@@ -123,8 +163,8 @@ The easiest and fastest way to launch the entire stack (Database, Backend, and F
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/your-username/ai-integration.git
-cd ai-integration
+git clone https://github.com/biswasprasana001/documind.git
+cd documind
 ```
 
 ### 2. Configure environment variables
@@ -133,14 +173,16 @@ Create a `.env` file inside the `backend/` directory:
 cp backend/.env.example backend/.env
 ```
 
-Edit `backend/.env` with your API keys:
+Edit `backend/.env` with your API key:
 ```env
-GEMINI_API_KEY="your_google_gemini_api_key"
-HF_API_KEY="your_huggingface_user_access_token"
+# Google Gemini API key (optional if using BYOK in UI)
+GEMINI_API_KEY="your_google_gemini_api_key_here"
+
+# Database connection URL for PostgreSQL pgvector
 DATABASE_URL="postgresql://postgres:postgres@db:5432/doc_qa"
 ```
 
-> **Note**: Even if you leave `GEMINI_API_KEY` or `HF_API_KEY` blank, you can still launch the app and supply your personal keys directly in the frontend UI via the **BYOK panel**!
+> **Note**: Even if you leave `GEMINI_API_KEY` blank, you can launch the app and supply your personal key directly in the frontend UI via the **BYOK panel**! Embeddings run locally via Fastembed and require no API key.
 
 ### 3. Spin up the application
 ```bash
@@ -223,12 +265,11 @@ The backend uses the following environment variables (defined in `backend/.env`)
 | Variable | Required? | Description |
 | :--- | :---: | :--- |
 | `GEMINI_API_KEY` | Optional* | Google AI Studio key for `gemini-3.6-flash`. *(Optional if using BYOK in UI)* |
-| `HF_API_KEY` | Optional* | Hugging Face access token for feature extraction. *(Optional if using BYOK in UI)* |
 | `DATABASE_URL` | **Yes** | Connection string for PostgreSQL (e.g. `postgresql://postgres:postgres@db:5432/doc_qa`) |
 
 > 🔑 **Obtaining API Keys**:
 > - Get a **Google Gemini API Key**: [Google AI Studio](https://aistudio.google.com/app/apikey)
-> - Get a **Hugging Face Access Token**: [Hugging Face Settings -> Tokens](https://huggingface.co/settings/tokens)
+> - **Embeddings**: Handled locally via **Fastembed** with the `sentence-transformers/all-MiniLM-L6-v2` model. **No additional API key is required.**
 
 ---
 
@@ -240,28 +281,27 @@ The backend exposes interactive Swagger documentation at `http://localhost:8000/
 
 | Method | Endpoint | Description | Key Headers / Payload |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/upload` | Upload & chunk a `.pdf` or `.txt` file, extract embeddings, and index into pgvector. | `multipart/form-data`: `file`, `session_id` |
-| `POST` | `/ask` | Perform semantic vector search and query Gemini for synthesized answer. | `JSON`: `{"question": "...", "session_id": "..."}` |
+| `POST` | `/upload` | Upload & chunk a `.pdf` or `.txt` file, generate local embeddings, and index into pgvector. | `multipart/form-data`: `file`, `session_id` |
+| `POST` | `/ask` | Perform semantic vector search (`<=>`) and synthesize answer with Gemini 3.6 Flash. | `JSON`: `{"question": "...", "session_id": "..."}` |
 | `GET` | `/documents` | List all unique filenames associated with the active session. | Query Param: `?session_id=<uuid>` |
 | `POST` | `/clear` | Delete all indexed chunks, documents, and vectors for a given session. | `JSON`: `{"session_id": "..."}` |
-| `POST` | `/verify-keys` | Test the validity of user-provided Gemini and Hugging Face API keys. | `JSON`: `{"gemini_key": "...", "hf_key": "..."}` |
-| `GET` | `/health` | Healthcheck endpoint returning server status. | None |
+| `POST` | `/verify-keys` | Test the validity of user-provided Gemini API key in real-time. | `JSON`: `{"gemini_key": "..."}` |
+| `GET` | `/health` | Healthcheck endpoint returning server status (`{"status": "ok"}`). | None |
 
 ### Custom Headers for BYOK
 When making requests from custom clients, you can pass:
-- `X-Gemini-API-Key: <your_api_key>`
-- `X-HF-API-Key: <your_access_token>`
+- `X-Gemini-API-Key: <your_gemini_api_key>`
 
 ---
 
 ## 🔑 Bring Your Own Key (BYOK) Architecture
 
-This project is built to be zero-cost for self-hosters or hosted community deployments:
+This project is built to be zero-cost for self-hosters and flexible for community deployments:
 1. Users click the **"🔑 API Keys"** button in the top navigation.
-2. Enter their own Google Gemini and Hugging Face keys.
-3. Click **"Verify Keys"** — the server tests both keys in real-time against the upstream models.
-4. Click **"Save to Browser"** — credentials are held strictly in the user's browser `localStorage` and sent over per-request headers.
-5. **Elevated Rate Limit**: Requests carrying personal keys bypass default shared limits and receive **100 requests/minute**.
+2. Enter their personal Google Gemini API key.
+3. Click **"Verify Key"** — the server tests the key in real-time against `gemini-3.6-flash`.
+4. Click **"Save Key"** — credentials are held strictly in the user's browser `localStorage` and sent over per-request headers (`X-Gemini-API-Key`).
+5. **Elevated Rate Limit**: Requests carrying personal keys bypass default shared limits and receive **100 requests/minute** (vs. 15 requests/minute for standard sessions).
 
 ---
 
@@ -285,7 +325,7 @@ cd frontend && npm run lint
 
 ## 📄 License
 
-Distributed under the **MIT License**. See <a href=http://github.com/biswasprasana001/documind/blob/main/LICENSE>LICENSE</a> for more information.
+Distributed under the **MIT License**. See [LICENSE](https://github.com/biswasprasana001/documind/blob/main/LICENSE) for more information.
 
 ---
 
