@@ -23,7 +23,8 @@
 
 <p align="center">
 
-https://github.com/user-attachments/assets/b937b9c6-5e63-4def-80e1-3ae130eb8772
+### 🌟 Walkthrough
+https://github.com/user-attachments/assets/a52b5c47-7027-4199-874a-4ffed19f144b
 
 </p>
 
